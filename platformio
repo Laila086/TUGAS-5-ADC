@@ -1,0 +1,25 @@
+; PlatformIO - ADC with Averaging (STM32 + ESP32 fallback)
+[platformio]
+default_envs = bluepill_f103c8
+
+[env:bluepill_f103c8]
+platform = ststm32
+board = bluepill_f103c8
+framework = arduino
+monitor_speed = 115200
+monitor_dtr = 0
+monitor_rts = 0
+build_flags =
+	-D PIO_FRAMEWORK_ARDUINO_ENABLE_CDC
+	-D USBCON
+upload_protocol = stlink
+debug_tool = stlink
+upload_flags =
+	-c
+	set CPUTAPID 0x2ba01477
+
+[env:esp32dev]
+platform = espressif32
+board = esp32dev
+framework = arduino
+monitor_speed = 115200
