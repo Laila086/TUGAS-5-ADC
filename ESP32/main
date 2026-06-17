@@ -1,0 +1,66 @@
+#include <Arduino.h>
+
+#define LDR_PIN 32
+#define SAMPLES 16
+#define SAMPLE_INTERVAL_MS 10
+#define REPORT_INTERVAL_MS 250
+#define ADC_MAX 4095.0f
+#define ADC_REF_VOLTAGE 3.3f
+
+int samples[SAMPLES] = {0};
+long sumSamples = 0;
+int sampleIndex = 0;
+bool bufferFilled = false;
+
+float rawToVoltage(int raw) {
+    return ((float)raw * ADC_REF_VOLTAGE) / ADC_MAX;
+}
+
+void updateAverage(int newRaw) {
+    sumSamples -= samples[sampleIndex];
+    samples[sampleIndex] = newRaw;
+    sumSamples += newRaw;
+
+    sampleIndex++;
+    if (sampleIndex >= SAMPLES) {
+        sampleIndex = 0;
+        bufferFilled = true;
+    }
+}
+
+int getAverageRaw() {
+    int count = bufferFilled ? SAMPLES : sampleIndex;
+    if (count <= 0) {
+        return 0;
+    }
+    return (int)(sumSamples / count);
+}
+
+void setup() {
+    Serial.begin(115200);
+    delay(1000);
+
+    analogReadResolution(12);
+    pinMode(LDR_PIN, INPUT);
+}
+
+void loop() {
+    static unsigned long lastSampleMs = 0;
+    static unsigned long lastReportMs = 0;
+    static int lastRaw = 0;
+    unsigned long now = millis();
+
+    if (now - lastSampleMs >= SAMPLE_INTERVAL_MS) {
+        lastSampleMs = now;
+        lastRaw = analogRead(LDR_PIN);
+        updateAverage(lastRaw);
+    }
+
+    if (now - lastReportMs >= REPORT_INTERVAL_MS) {
+        lastReportMs = now;
+        int avgRaw = getAverageRaw();
+        float avgVoltage = rawToVoltage(avgRaw);
+
+        Serial.printf("ADC=%4d | V=%.3f\n", avgRaw, avgVoltage);
+    }
+}
