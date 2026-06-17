@@ -1,0 +1,100 @@
+#include <Arduino.h>
+
+#if defined(ARDUINO_ARCH_STM32) && defined(USBCON)
+#define DBG_SERIAL SerialUSB
+#else
+#define DBG_SERIAL Serial
+#endif
+
+const uint8_t POT_PIN = PA0;
+const uint8_t LDR_PIN = PA1;
+
+const uint8_t SAMPLES = 16;
+const uint32_t SAMPLE_INTERVAL_MS = 10;
+const uint32_t REPORT_INTERVAL_MS = 250;
+const float ADC_REF_VOLTAGE = 3.3f;
+const float ADC_MAX = 4095.0f;
+
+int potBuffer[SAMPLES] = {0};
+long potSum = 0;
+uint8_t potIndex = 0;
+bool potFilled = false;
+
+int ldrBuffer[SAMPLES] = {0};
+long ldrSum = 0;
+uint8_t ldrIndex = 0;
+bool ldrFilled = false;
+
+void pushSample(int raw, int *buffer, long *sum, uint8_t *index, bool *filled) {
+    *sum -= buffer[*index];
+    buffer[*index] = raw;
+    *sum += raw;
+
+    (*index)++;
+    if (*index >= SAMPLES) {
+        *index = 0;
+        *filled = true;
+    }
+}
+
+int getAverage(const long sum, const uint8_t index, const bool filled) {
+    uint8_t count = filled ? SAMPLES : index;
+    if (count == 0) {
+        return 0;
+    }
+    return (int)(sum / count);
+}
+
+float rawToVoltage(int raw) {
+    return ((float)raw * ADC_REF_VOLTAGE) / ADC_MAX;
+}
+
+void setup() {
+    DBG_SERIAL.begin(115200);
+    delay(1500);
+
+#if defined(ARDUINO_ARCH_STM32) && defined(USBCON)
+    unsigned long usbWaitStart = millis();
+    while (!DBG_SERIAL && (millis() - usbWaitStart < 3000)) {
+        delay(10);
+    }
+#endif
+
+    analogReadResolution(12);
+    pinMode(POT_PIN, INPUT_ANALOG);
+    pinMode(LDR_PIN, INPUT_ANALOG);
+
+    DBG_SERIAL.println("STM32 ADC Averaging (POT + LDR)");
+}
+
+void loop() {
+    static unsigned long lastSampleMs = 0;
+    static unsigned long lastReportMs = 0;
+
+    unsigned long now = millis();
+
+    if (now - lastSampleMs >= SAMPLE_INTERVAL_MS) {
+        lastSampleMs = now;
+
+        int potRaw = analogRead(POT_PIN);
+        int ldrRaw = analogRead(LDR_PIN);
+
+        pushSample(potRaw, potBuffer, &potSum, &potIndex, &potFilled);
+        pushSample(ldrRaw, ldrBuffer, &ldrSum, &ldrIndex, &ldrFilled);
+    }
+
+    if (now - lastReportMs >= REPORT_INTERVAL_MS) {
+        lastReportMs = now;
+
+        int potAvgRaw = getAverage(potSum, potIndex, potFilled);
+        int ldrAvgRaw = getAverage(ldrSum, ldrIndex, ldrFilled);
+
+        DBG_SERIAL.printf(
+            "POT: ADC=%4d V=%.3f | LDR: ADC=%4d V=%.3f\n",
+            potAvgRaw,
+            rawToVoltage(potAvgRaw),
+            ldrAvgRaw,
+            rawToVoltage(ldrAvgRaw)
+        );
+    }
+}
